@@ -28,7 +28,7 @@ The vision system has main packages, helpers and 3rd helpers.
 
 Clone this repository using the follow command:
 ```
-git clone --recursive https://github.com/FBOTWork/work_manipulation.git
+git clone --recursive https://github.com/FBOTWork/work_vision.git
 ```
 
 ## Instalation
