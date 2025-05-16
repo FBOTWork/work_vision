@@ -16,9 +16,9 @@ This software is built on the Robotic Operating System (ROS Kinetic), which need
 The vision system has main packages, helpers and 3rd helpers.
 
 ### Main Packages
-- [work_behavior](https://github.com/FBOTWork/work_behavior);
-- [work_manipulation](https://github.com/FBOTWork/work_manipulation);
-- [apriltag_ros](https://github.com/FBOTWork/apriltag_ros).
+- work_behavior;
+- work_manipulation;
+- apriltag_ros.
 
 ### Helper Packages
 - 
