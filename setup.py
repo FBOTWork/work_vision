@@ -9,7 +9,7 @@ setup_args = generate_distutils_setup(
     package_dir={'': 'src'},
     install_requires=[
         'langchain',
-        'openai'
+        'openai',
         'pyautogen'
     ])
 
