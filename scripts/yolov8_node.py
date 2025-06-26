@@ -11,6 +11,7 @@ from cv_bridge import CvBridge
 from PIL import Image as PILImage
 import rospkg
 import os
+from work_vision.msgs import Description, Recognitions
 
 class YoloV8Node:
     def __init__(self):
