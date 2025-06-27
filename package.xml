@@ -2,6 +2,7 @@
 <package format="2">
   <name>work_vision</name>
   <version>0.0.1</version>
+
   <description>Computer vision package for the Robotic Team FBOT@Work of RoboCup@Work.</description>
 
   <maintainer email="gabrieltlt721@gmail.com">Gabriel Torres Lima Teixeira</maintainer>
