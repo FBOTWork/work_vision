@@ -11,7 +11,7 @@ import rospkg
 import os
 
 # Importe as mensagens customizadas que você criou
-from work_vision.msg import Description, Recognitions
+from work_vision.msg import Description2D, Recognitions2D
 
 class YoloV8Node:
     def __init__(self):
@@ -102,7 +102,6 @@ class YoloV8Node:
             self.pub_recognitions.publish(recognitions_msg)
             # Log apenas se algo for detectado
             rospy.loginfo(f"Detectado {len(recognitions_msg.recognitions)} objeto(s).")
-
 
     def run(self):
         rospy.spin()
