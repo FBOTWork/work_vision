@@ -2,6 +2,8 @@
 <launch>
     <include file="$(find realsense2_camera)/launch/rs_camera.launch" />
 
+    <include file="$(find work_vision)/launch/container_detection.launch" />
+
     <include file="$(find apriltag_ros)/launch/rs_continuous_detection.launch" />
 
     <arg name="use_rviz" default="false" />

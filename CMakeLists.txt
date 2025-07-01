@@ -57,5 +57,6 @@ include_directories(
 )
 
 install(PROGRAMS
+scripts/container_detector_node.py
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
