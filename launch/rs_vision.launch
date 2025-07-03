@@ -4,6 +4,8 @@
 
     <include file="$(find work_vision)/launch/container_detection.launch" />
 
+    <include file="$(find work_vision)/launch/strip_tape.launch" />
+
     <include file="$(find apriltag_ros)/launch/rs_continuous_detection.launch" />
 
     <arg name="use_rviz" default="false" />
