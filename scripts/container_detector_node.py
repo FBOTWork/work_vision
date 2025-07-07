@@ -63,7 +63,7 @@ class ContainerDetectorNode:
         try:
             cv_image = self.bridge.imgmsg_to_cv2(image_data, "bgr8")
         except CvBridgeError as e:
-            rospy.logerr("CvBridge Error na imagem colorida: %s", e)
+            #rospy.logerr("CvBridge Error na imagem colorida: %s", e)
             return
 
         try:
@@ -73,10 +73,10 @@ class ContainerDetectorNode:
             elif depth_data.encoding == "32FC1":
                 depth_image = self.bridge.imgmsg_to_cv2(depth_data, "32FC1")
             else:
-                rospy.logerr("Encoding de profundidade desconhecido: %s. Apenas 16UC1 e 32FC1 sao suportados.", depth_data.encoding)
+                #rospy.logerr("Encoding de profundidade desconhecido: %s. Apenas 16UC1 e 32FC1 sao suportados.", depth_data.encoding)
                 return
         except CvBridgeError as e:
-            rospy.logerr("CvBridge Error na imagem de profundidade: %s", e)
+            #rospy.logerr("CvBridge Error na imagem de profundidade: %s", e)
             return
 
         result_image, container_mask, centroid_2d_coords = detect_and_segment_blue_container_py2(cv_image)
@@ -117,7 +117,7 @@ class ContainerDetectorNode:
                         pose_3d_msg.pose.orientation.w = 1.0
 
                         self.pose_3d_pub.publish(pose_3d_msg)
-                        rospy.loginfo("Pose 3D do centroide publicada: X=%.3f, Y=%.3f, Z=%.3f", X_camera, Y_camera, Z_camera)
+                        #rospy.loginfo("Pose 3D do centroide publicada: X=%.3f, Y=%.3f, Z=%.3f", X_camera, Y_camera, Z_camera)
 
                         # NOVO: Publicar Marker 3D (Esfera)
                         marker = Marker()
@@ -149,12 +149,12 @@ class ContainerDetectorNode:
                         self.marker_pub.publish(marker)
                         self.marker_id += 1 # Incrementar ID para o proximo marker
 
-                    else:
-                        rospy.logwarn("Profundidade invalida ou zero no centroide (%d, %d).", u, v)
-                else:
-                    rospy.logwarn("Centroide (%d, %d) esta fora dos limites da imagem de profundidade (%dx%d).", u, v, depth_image.shape[1], depth_image.shape[0])
-            else:
-                rospy.logwarn("Centroide 2D nao encontrado para calcular a pose 3D.")
+            #         else:
+            #             rospy.logwarn("Profundidade invalida ou zero no centroide (%d, %d).", u, v)
+            #     else:
+            #         rospy.logwarn("Centroide (%d, %d) esta fora dos limites da imagem de profundidade (%dx%d).", u, v, depth_image.shape[1], depth_image.shape[0])
+            # else:
+            #     rospy.logwarn("Centroide 2D nao encontrado para calcular a pose 3D.")
         else:
             # Se nenhum container for encontrado, voce pode querer "limpar" o marker
             # Enviando um marker com ACTION_DELETE
@@ -166,7 +166,7 @@ class ContainerDetectorNode:
                 marker.action = Marker.DELETE
                 self.marker_pub.publish(marker)
             self.marker_id = 0 # Resetar o ID ou gerenciar IDs de forma mais robusta
-            rospy.logwarn("Nenhum container encontrado nesta imagem para processar profundidade.")
+            # rospy.logwarn("Nenhum container encontrado nesta imagem para processar profundidade.")
 
 def main():
     try:
