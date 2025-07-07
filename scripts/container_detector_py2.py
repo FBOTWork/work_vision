@@ -100,7 +100,7 @@ def detect_and_segment_blue_container_py2(image_np):
         cv2.putText(output_image, "Centroide: (%d, %d)" % centroid_coords, (cX - 50, cY - 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
     else:
-        print ("Nenhum container azul significativo encontrado.")
+        # print ("Nenhum container azul significativo encontrado.")
         mask = None
 
     return output_image, mask, centroid_coords
