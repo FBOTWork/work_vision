@@ -12,6 +12,8 @@ class DetectorDeFaixasLaranja:
     def __init__(self):
         rospy.init_node('detector_de_faixas_laranja', anonymous=True)
 
+        self.last_print_time = rospy.Time.now()
+
         # Inicializa ponte entre ROS e OpenCV
         self.bridge = CvBridge()
 
@@ -101,12 +103,59 @@ class DetectorDeFaixasLaranja:
 
         # Publica as coordenadas (x, y, z) no tópico ROS
         flat_coords = []
-        for (x, y, z) in coords_centers:
-            flat_coords.extend([float(x), float(y), z])
+
+        current_time = rospy.Time.now()
+
+        # Se dois ou mais retângulos, encontra os dois extremos (mais distantes)
+        if len(coords_centers) >= 2:
+            max_dist = 0
+            pt1 = pt2 = None
+            for i in range(len(coords_centers)):
+                for j in range(i + 1, len(coords_centers)):
+                    x1, y1, _ = coords_centers[i]
+                    x2, y2, _ = coords_centers[j]
+                    dist = np.hypot(x2 - x1, y2 - y1)
+                    if dist > max_dist:
+                        max_dist = dist
+                        pt1 = coords_centers[i]
+                        pt2 = coords_centers[j]
+
+            if pt1 and pt2:
+                flat_coords.extend([float(pt1[0]), float(pt1[1]), float(pt1[2]),
+                                    float(pt2[0]), float(pt2[1]), float(pt2[2])])
+                cv2.line(output_image, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])), (255, 0, 0), 3, lineType=cv2.LINE_AA)
+
+                if (current_time - self.last_print_time).to_sec() > 0.5:
+                    rospy.loginfo("Extremos (x, y, z): [{:.2f}, {:.2f}, {:.3f}] <-> [{:.2f}, {:.2f}, {:.3f}]".format(
+                        pt1[0], pt1[1], pt1[2], pt2[0], pt2[1], pt2[2]))
+                    self.last_print_time = current_time
+
+        # Se exatamente um retângulo, publica ele mesmo
+        elif len(coords_centers) == 1:
+            x, y, z = coords_centers[0]
+            flat_coords.extend([x, y, z])
+
+            if (current_time - self.last_print_time).to_sec() > 0.5:
+                rospy.loginfo("Coordenada (x, y, z): [{:.2f}, {:.2f}, {:.3f}]".format(x, y, z))
+                self.last_print_time = current_time
+
+        # Se nenhum retângulo, mostra aviso
+        else:
+            if (current_time - self.last_print_time).to_sec() > 0.5:
+                rospy.logwarn("Nenhuma fita detectada.")
+                self.last_print_time = current_time
+
+
 
         coord_msg = Float32MultiArray()
         coord_msg.data = flat_coords
         self.pub_coords.publish(coord_msg)
+
+        if coords_centers and (rospy.Time.now() - self.last_print_time).to_sec() > 0.5:
+            coord_str = " ".join(["[{:.2f}, {:.2f}, {:.3f}]".format(x, y, z) for (x, y, z) in coords_centers])
+            rospy.loginfo("Coordenadas (x, y, z): " + coord_str)
+            self.last_print_time = rospy.Time.now()
+
 
         # Desenha linhas entre os centros detectados
         if len(coords_centers) > 1:
