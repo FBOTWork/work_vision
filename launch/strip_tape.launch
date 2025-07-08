@@ -1,15 +1,13 @@
 <launch>
-
-  <!-- Camera parameters -->
-  <arg name="camera_name"        default="/camera/color" />
-  <arg name="camera_frame"       default="camera" />
-  <arg name="image_topic"        default="/image_raw" />
-  <arg name="publish_image"      default="true" />
-
-  <node pkg="work_vision"
-        type="striped_tape_w_sam.py"
-        name="striped_tape_w_sam_node"
-        output="screen">
-  </node>
+    <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+		  <arg name="align_depth" value="true"/>
+	  </include>
+    
+    <node name="transform_tape" pkg="work_vision" type="transform_tape.py" output="screen"/>
+    
+    <arg name="use_rviz" default="true"/>
+    <group if="$(arg use_rviz)">
+        <node name="rviz" pkg="rviz" type="rviz" args="-d $(find work_vision)/rviz/striped_tape.rviz"/>
+    </group>
 
 </launch>

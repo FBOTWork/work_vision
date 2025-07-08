@@ -4,8 +4,11 @@
 import rospy
 import cv2
 import numpy as np
+import tf
 from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
+from geometry_msgs.msg import PointStamped
+from visualization_msgs.msg import Marker
 from cv_bridge import CvBridge
 
 class DetectorDeFaixasLaranja:
@@ -14,23 +17,17 @@ class DetectorDeFaixasLaranja:
 
         self.last_print_time = rospy.Time.now()
 
-        # Inicializa ponte entre ROS e OpenCV
         self.bridge = CvBridge()
+        self.tf_listener = tf.TransformListener()
 
-        # Publisher da imagem processada
         self.pub_image = rospy.Publisher('/fita_zebrada/detected_image', Image, queue_size=10)
-
-        # Publisher das coordenadas dos centros detectados (x, y, z)
         self.pub_coords = rospy.Publisher('/fita_zebrada/centros', Float32MultiArray, queue_size=10)
+        self.marker_pub = rospy.Publisher('/fita_zebrada/obstaculo_virtual', Marker, queue_size=10)
 
-        # Subscriber da imagem RGB da câmera
         rospy.Subscriber('/camera/color/image_raw', Image, self.image_callback)
-
-        # Subscriber da imagem de profundidade
         self.depth_image = None
         rospy.Subscriber('/camera/depth/image_rect_raw', Image, self.depth_callback)
 
-        # Ranges HSV para detectar tons de laranja
         self.lower_orange_normal = np.array([0, 100, 100])
         self.upper_orange_normal = np.array([10, 255, 255])
         self.lower_orange_highlight = np.array([5, 100, 200])
@@ -39,19 +36,22 @@ class DetectorDeFaixasLaranja:
         self.min_area = 20
         self.max_area = 60000
 
+        self.fx = 617.0
+        self.fy = 617.0
+        self.cx = 320.0
+        self.cy = 240.0
+
         rospy.loginfo("Detector de faixas laranja iniciado.")
         rospy.spin()
 
     def depth_callback(self, msg):
         try:
-            # Converte imagem de profundidade ROS para OpenCV (tipo float32 em metros)
             self.depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
         except Exception as e:
             rospy.logerr("Erro ao converter imagem de profundidade: {}".format(e))
 
     def image_callback(self, msg):
         try:
-            # Converte a imagem ROS para OpenCV
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as e:
             rospy.logerr("Erro ao converter imagem: {}".format(e))
@@ -64,21 +64,20 @@ class DetectorDeFaixasLaranja:
         output_image = frame.copy()
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        # Máscaras de cor
         mask_normal = cv2.inRange(hsv, self.lower_orange_normal, self.upper_orange_normal)
         mask_highlight = cv2.inRange(hsv, self.lower_orange_highlight, self.upper_orange_highlight)
         mask = cv2.bitwise_or(mask_normal, mask_highlight)
 
-        # Operações morfológicas
         kernel = np.ones((5,5), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
-        # Contornos
         contour_result = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contours = contour_result[1] if len(contour_result) == 3 else contour_result[0]
 
         coords_centers = []
+        flat_coords = []
+        current_time = rospy.Time.now()
 
         for contour in contours:
             area = cv2.contourArea(contour)
@@ -92,86 +91,65 @@ class DetectorDeFaixasLaranja:
                 cx = int(cx)
                 cy = int(cy)
 
-                # Obtém o valor de profundidade (z) no ponto (cx, cy)
                 if 0 <= cy < self.depth_image.shape[0] and 0 <= cx < self.depth_image.shape[1]:
-                    z = float(self.depth_image[cy, cx])
+                    z = float(self.depth_image[cy, cx]) / 1000.0
                 else:
-                    z = 0.0  # Profundidade inválida, define como 0
+                    z = 0.0
+
+                if z == 0 or np.isnan(z):
+                    continue
+
+                x = (cx - self.cx) * z / self.fx
+                y = (cy - self.cy) * z / self.fy
+
+                ponto_camera = PointStamped()
+                ponto_camera.header.stamp = rospy.Time(0)
+                ponto_camera.header.frame_id = "camera_depth_optical_frame"
+                ponto_camera.point.x = x
+                ponto_camera.point.y = y
+                ponto_camera.point.z = z
+
+                try:
+                    ponto_mapa = self.tf_listener.transformPoint("map", ponto_camera)
+                    rospy.loginfo("Obstáculo virtual em /map: x=%.2f y=%.2f z=%.2f",
+                                  ponto_mapa.point.x, ponto_mapa.point.y, ponto_mapa.point.z)
+                    self.publicar_marker(ponto_mapa)
+                except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
+                    rospy.logwarn("Erro ao transformar ponto: {}".format(e))
+                    continue
 
                 coords_centers.append((cx, cy, z))
                 cv2.circle(output_image, (cx, cy), 5, (0, 255, 255), -1)
-
-        # Publica as coordenadas (x, y, z) no tópico ROS
-        flat_coords = []
-
-        current_time = rospy.Time.now()
-
-        # Se dois ou mais retângulos, encontra os dois extremos (mais distantes)
-        if len(coords_centers) >= 2:
-            max_dist = 0
-            pt1 = pt2 = None
-            for i in range(len(coords_centers)):
-                for j in range(i + 1, len(coords_centers)):
-                    x1, y1, _ = coords_centers[i]
-                    x2, y2, _ = coords_centers[j]
-                    dist = np.hypot(x2 - x1, y2 - y1)
-                    if dist > max_dist:
-                        max_dist = dist
-                        pt1 = coords_centers[i]
-                        pt2 = coords_centers[j]
-
-            if pt1 and pt2:
-                flat_coords.extend([float(pt1[0]), float(pt1[1]), float(pt1[2]),
-                                    float(pt2[0]), float(pt2[1]), float(pt2[2])])
-                cv2.line(output_image, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])), (255, 0, 0), 3, lineType=cv2.LINE_AA)
-
-                if (current_time - self.last_print_time).to_sec() > 0.5:
-                    rospy.loginfo("Extremos (x, y, z): [{:.2f}, {:.2f}, {:.3f}] <-> [{:.2f}, {:.2f}, {:.3f}]".format(
-                        pt1[0], pt1[1], pt1[2], pt2[0], pt2[1], pt2[2]))
-                    self.last_print_time = current_time
-
-        # Se exatamente um retângulo, publica ele mesmo
-        elif len(coords_centers) == 1:
-            x, y, z = coords_centers[0]
-            flat_coords.extend([x, y, z])
-
-            if (current_time - self.last_print_time).to_sec() > 0.5:
-                rospy.loginfo("Coordenada (x, y, z): [{:.2f}, {:.2f}, {:.3f}]".format(x, y, z))
-                self.last_print_time = current_time
-
-        # Se nenhum retângulo, mostra aviso
-        else:
-            if (current_time - self.last_print_time).to_sec() > 0.5:
-                rospy.logwarn("Nenhuma fita detectada.")
-                self.last_print_time = current_time
-
-
 
         coord_msg = Float32MultiArray()
         coord_msg.data = flat_coords
         self.pub_coords.publish(coord_msg)
 
-        if coords_centers and (rospy.Time.now() - self.last_print_time).to_sec() > 0.5:
-            coord_str = " ".join(["[{:.2f}, {:.2f}, {:.3f}]".format(x, y, z) for (x, y, z) in coords_centers])
-            rospy.loginfo("Coordenadas (x, y, z): " + coord_str)
-            self.last_print_time = rospy.Time.now()
-
-
-        # Desenha linhas entre os centros detectados
-        if len(coords_centers) > 1:
-            coords_centers.sort(key=lambda p: (p[0], p[1]))
-            pt1 = (int(coords_centers[0][0]), int(coords_centers[0][1]))
-            for pt in coords_centers[1:]:
-                pt2 = (int(pt[0]), int(pt[1]))
-                cv2.line(output_image, pt1, pt2, (255, 0, 0), 3, lineType=cv2.LINE_AA)
-                pt1 = pt2
-
-        # Publica a imagem processada
         try:
             msg_out = self.bridge.cv2_to_imgmsg(output_image, encoding="bgr8")
             self.pub_image.publish(msg_out)
         except Exception as e:
             rospy.logerr("Erro ao publicar imagem: {}".format(e))
+
+    def publicar_marker(self, ponto_mapa):
+        marker = Marker()
+        marker.header.frame_id = "map"
+        marker.header.stamp = rospy.Time.now()
+        marker.ns = "fita"
+        marker.id = int(rospy.Time.now().to_sec() * 1000) % 100000
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        marker.pose.position = ponto_mapa.point
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = 0.2
+        marker.scale.y = 0.2
+        marker.scale.z = 0.2
+        marker.color.r = 1.0
+        marker.color.g = 0.5
+        marker.color.b = 0.0
+        marker.color.a = 1.0
+        marker.lifetime = rospy.Duration(30.0)
+        self.marker_pub.publish(marker)
 
 if __name__ == '__main__':
     try:
