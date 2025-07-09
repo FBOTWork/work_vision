@@ -1,8 +1,4 @@
-<launch>
-    <include file="$(find realsense2_camera)/launch/rs_camera.launch">
-		  <arg name="align_depth" value="true"/>
-	  </include>
-    
+<launch>  
     <node name="striped_tape_w_sam" pkg="work_vision" type="striped_tape_w_sam.py" output="screen"/>
     
     <arg name="use_rviz" default="true"/>
