@@ -16,11 +16,11 @@ import sys
 import message_filters
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from container_detector_py2 import detect_and_segment_blue_container_py2
+from container_detector_red_py2 import detect_and_segment_red_container_py2
 
 class ContainerDetectorNode:
     def __init__(self):
-        rospy.init_node('container_detector_node', anonymous=True)
+        rospy.init_node('container_detector_red_node', anonymous=True)
 
         self.bridge = CvBridge()
         self.intrinsics = None
@@ -35,18 +35,18 @@ class ContainerDetectorNode:
         self.ts.registerCallback(self.image_depth_callback)
         rospy.loginfo("Subscrito e sincronizando topicos /camera/color/image_raw e /camera/depth/image_rect_raw")
 
-        self.result_image_pub = rospy.Publisher("/container_detector/result_image", Image, queue_size=1)
-        rospy.loginfo("Publicando resultados em /container_detector/result_image")
+        self.result_image_pub = rospy.Publisher("/container_detector_red/result_image", Image, queue_size=1)
+        rospy.loginfo("Publicando resultados em /container_detector_red/result_image")
 
-        self.centroid_2d_pub = rospy.Publisher("/container_detector/centroid_2d", Point, queue_size=1)
-        rospy.loginfo("Publicando centroide 2D em /container_detector/centroid_2d")
+        self.centroid_2d_pub = rospy.Publisher("/container_detector_red/centroid_2d", Point, queue_size=1)
+        rospy.loginfo("Publicando centroide 2D em /container_detector_red/centroid_2d")
 
-        self.pose_3d_pub = rospy.Publisher("/container_detector/container_pose_3d", PoseStamped, queue_size=1)
-        rospy.loginfo("Publicando pose 3D em /container_detector/container_pose_3d")
+        self.pose_3d_pub = rospy.Publisher("/container_detector_red/container_pose_3d", PoseStamped, queue_size=1)
+        rospy.loginfo("Publicando pose 3D em /container_detector_red/container_pose_3d")
 
         # NOVO: Publicador para Marker
-        self.marker_pub = rospy.Publisher("/container_detector/container_marker", Marker, queue_size=1)
-        rospy.loginfo("Publicando Marker 3D em /container_detector/container_marker")
+        self.marker_pub = rospy.Publisher("/container_detector_red/container_marker", Marker, queue_size=1)
+        rospy.loginfo("Publicando Marker 3D em /container_detector_red/container_marker")
 
         self.marker_id = 0 # ID unico para o marker
 
@@ -79,7 +79,7 @@ class ContainerDetectorNode:
             #rospy.logerr("CvBridge Error na imagem de profundidade: %s", e)
             return
 
-        result_image, container_mask, centroid_2d_coords = detect_and_segment_blue_container_py2(cv_image)
+        result_image, container_mask, centroid_2d_coords = detect_and_segment_red_container_py2(cv_image)
 
         if result_image is not None:
             try:
