@@ -3,7 +3,7 @@
 
     <include file="$(find realsense2_camera)/launch/rs_camera.launch" />
 
-    <arg name="use_container" default="true" />
+    <arg name="use_container" default="false" />
     <group if="$(arg use_container)">
        <include file="$(find work_vision)/launch/container_detection_blue.launch" />
        <include file="$(find work_vision)/launch/container_detection_red.launch" />
