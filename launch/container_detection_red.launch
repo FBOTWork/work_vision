@@ -7,9 +7,10 @@
   <arg name="publish_image"      default="true" />
 
   <node pkg="work_vision"
-        type="container_detector_node.py"
-        name="container_detector_node"
+        type="container_detector_red_node.py"
+        name="container_detector_red_node"
         output="screen">
   </node>
+
 
 </launch>
