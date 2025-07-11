@@ -3,9 +3,9 @@
 
 import rospy
 import tf
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray, Header
 from sensor_msgs.msg import PointCloud
-from geometry_msgs.msg import Point32, PointStamped, Header
+from geometry_msgs.msg import Point32, PointStamped
 
 class VirtualObstaclePublisher:
     def __init__(self):
@@ -41,8 +41,8 @@ class VirtualObstaclePublisher:
             ponto_camera = PointStamped()
             ponto_camera.header.frame_id = "camera_link"  # ou base_link, depende do seu setup
             ponto_camera.header.stamp = rospy.Time(0)
-            ponto_camera.point.x = x
-            ponto_camera.point.y = y
+            ponto_camera.point.x = x/1000
+            ponto_camera.point.y = y/1000
             ponto_camera.point.z = 0.0
 
             try:

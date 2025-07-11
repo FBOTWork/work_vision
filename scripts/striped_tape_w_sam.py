@@ -94,7 +94,7 @@ class DetectorDeFaixasLaranja:
 
                 # Obtém o valor de profundidade (z) no ponto (cx, cy)
                 if 0 <= cy < self.depth_image.shape[0] and 0 <= cx < self.depth_image.shape[1]:
-                    z = float(self.depth_image[cy, cx])
+                    z = float(self.depth_image[cy, cx]) 
                 else:
                     z = 0.0  # Profundidade inválida, define como 0
 

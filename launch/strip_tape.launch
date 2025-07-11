@@ -1,7 +1,7 @@
 <launch>
-    <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <!-- <include file="$(find realsense2_camera)/launch/rs_camera.launch">
 		  <arg name="align_depth" value="true"/>
-	  </include>
+	  </include> -->
     
     <node name="striped_tape_w_sam" pkg="work_vision" type="striped_tape_w_sam.py" output="screen"/>
     <node name="virtual_obstacle_publisher" pkg="work_vision" type="virtual_obstacle_publisher.py" output="screen"/>

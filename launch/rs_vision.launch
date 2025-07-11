@@ -8,7 +8,7 @@
        <include file="$(find work_vision)/launch/container_detection.launch" />
     </group>
 
-    <arg name="use_tape" default="false" />
+    <arg name="use_tape" default="true" />
     <group if="$(arg use_tape)">
       <include file="$(find work_vision)/launch/strip_tape.launch" />
     </group>
