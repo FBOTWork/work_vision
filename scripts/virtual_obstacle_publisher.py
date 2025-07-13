@@ -12,7 +12,7 @@ class VirtualObstaclePublisher:
         rospy.init_node('virtual_obstacle_publisher', anonymous=True)
 
         # Publica PointCloud no tópico que o costmap escuta
-        self.pub = rospy.Publisher('/move_base/local_costmap/obstacles', PointCloud, queue_size=10)
+        self.pub = rospy.Publisher('/striped_tape_obstacle', PointCloud, queue_size=10)
 
         # Assina as coordenadas da fita
         rospy.Subscriber('/fita_zebrada/centros', Float32MultiArray, self.fita_callback)
@@ -28,30 +28,34 @@ class VirtualObstaclePublisher:
 
         pontos_map = []
 
-        # Cada ponto na fita (camera_link)
+        # Corrigido: considera o Z real
         if len(data) == 3:
-            pontos = [(data[0], data[1])]
+            pontos = [(data[0], data[1], data[2])]
         elif len(data) == 6:
-            pontos = [(data[0], data[1]), (data[3], data[4])]
+            pontos = [(data[0], data[1], data[2]), (data[3], data[4], data[5])]
         else:
             rospy.logwarn("Nenhum ponto válido recebido.")
             return
 
-        for (x, y) in pontos:
+        for (x, y, z) in pontos:
             ponto_camera = PointStamped()
-            ponto_camera.header.frame_id = "camera_link"  # ou base_link, depende do seu setup
+            ponto_camera.header.frame_id = "camera_link"  # Ou base_link, conforme seu TF tree
             ponto_camera.header.stamp = rospy.Time(0)
-            ponto_camera.point.x = x/1000
-            ponto_camera.point.y = y/1000
-            ponto_camera.point.z = 0.0
+
+            # 📌 Converte cm -> metros
+            ponto_camera.point.x = x / 1000.0
+            ponto_camera.point.y = y / 1000.0
+            ponto_camera.point.z = z / 1000.0
 
             try:
                 ponto_map = self.tf_listener.transformPoint("map", ponto_camera)
                 p_map = Point32()
                 p_map.x = ponto_map.point.x
                 p_map.y = ponto_map.point.y
-                p_map.z = 0.0
+                p_map.z = 0.0  # z no costmap é plano, então 0.0
+
                 pontos_map.append(p_map)
+
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
                 rospy.logwarn("Erro transformando ponto: %s", str(e))
 
