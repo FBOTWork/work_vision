@@ -4,7 +4,8 @@
 	  </include> -->
     
     <node name="striped_tape_w_sam" pkg="work_vision" type="striped_tape_w_sam.py" output="screen"/>
-    <node name="virtual_obstacle_publisher" pkg="work_vision" type="virtual_obstacle_publisher.py" output="screen"/>
+    <!-- Desabilitado porque striped_tape_w_sam.py agora publica direto -->
+    <!-- <node name="virtual_obstacle_publisher" pkg="work_vision" type="virtual_obstacle_publisher.py" output="screen"/> -->
     
     <arg name="use_rviz" default="false"/>
     <group if="$(arg use_rviz)">
