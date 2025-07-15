@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-
 import rospy
 import cv2
 import numpy as np
@@ -10,7 +9,7 @@ from cv_bridge import CvBridge
 import sensor_msgs.point_cloud2 as pc2
 from geometry_msgs.msg import PointStamped
 import tf
-from visualization_msgs.msg import Marker
+from visualization_msgs.msg import Marker, MarkerArray
 from image_geometry import PinholeCameraModel
 
 class DetectorDeFaixasLaranja:
@@ -28,16 +27,16 @@ class DetectorDeFaixasLaranja:
         rospy.Subscriber('/camera/depth/camera_info', CameraInfo, self.camera_info_callback)
 
         # Publisher da imagem processada
-        self.pub_image = rospy.Publisher('/fita_zebrada/detected_image', Image, queue_size=10)
+        self.pub_image = rospy.Publisher('/fita_zebrada/detected_image', Image, queue_size=3)
 
         # Publisher das coordenadas dos centros detectados (x, y, z)
-        self.pub_coords = rospy.Publisher('/fita_zebrada/centros', Float32MultiArray, queue_size=10)
+        # self.pub_coords = rospy.Publisher('/fita_zebrada/centros', Float32MultiArray, queue_size=10)
         
         # Publisher para obstáculos virtuais no mapa (PointCloud acumulativo)
         self.pc_pub = rospy.Publisher('/virtual_obstacles', PointCloud2, queue_size=1)
         
         # Publisher para marcadores de visualização
-        self.marker_pub = rospy.Publisher('/visualization_marker_array', Marker, queue_size=10)
+        self.marker_pub = rospy.Publisher('/visualization_marker_array', MarkerArray, queue_size=10)
 
         # Subscriber da imagem RGB da câmera
         rospy.Subscriber('/camera/color/image_raw', Image, self.image_callback)
@@ -53,29 +52,12 @@ class DetectorDeFaixasLaranja:
         self.upper_orange_highlight = np.array([15, 200, 255])
 
         self.min_area = 20
-        self.max_area = 60000
+        self.max_area = 600
         
         # TF listener para transformações de coordenadas
         self.tf_listener = tf.TransformListener()
-        
-        # Lista para acumular pontos detectados (persistência)
-        self.pontos_detectados = []
-        self.tempo_expiracao = 40.0  # segundos para manter um ponto
-        self.marker_id_counter = 0
-        
-        # Controle de timestamp para evitar republicar dados antigos
-        self.ultima_deteccao_timestamp = rospy.Time(0)
-        self.min_intervalo_publicacao = 0.1  # Mínimo 100ms entre publicações
-        
-        # Cache para otimização
-        self.ultima_mask = None
-        self.contador_frames = 0
-        self.processar_a_cada_n_frames = 2  # Processa a cada 2 frames para melhorar FPS
-        
-        # Cache espacial para evitar republicar pontos na mesma região
-        self.pontos_publicados = []  # Lista de pontos já publicados
-        self.distancia_minima = 0.3  # Mínimo 30cm entre pontos publicados
-        self.tempo_expiracao_ponto = 5.0  # Pontos expiram em 5 segundos
+
+        self.notificado = False
 
         rospy.loginfo("Detector de faixas laranja iniciado.")
         rospy.spin()
@@ -99,7 +81,7 @@ class DetectorDeFaixasLaranja:
         """Publica um ponto como obstáculo virtual no mapa com timestamp"""
         # Só publica se for dados frescos
         current_time = rospy.Time.now()
-        if (current_time - timestamp).to_sec() > 0.5:  # Dados mais antigos que 500ms
+        if (current_time - timestamp).to_sec() > 0.1:  # Dados mais antigos que 100ms
             return
         
         # Verifica se já existe um ponto próximo publicado recentemente
@@ -118,21 +100,6 @@ class DetectorDeFaixasLaranja:
             'ponto': ponto,
             'timestamp': current_time
         })
-
-    def ponto_ja_existe_proximo(self, novo_ponto, current_time):
-        """Verifica se já existe um ponto próximo publicado recentemente"""
-        # Remove pontos expirados
-        self.pontos_publicados = [p for p in self.pontos_publicados 
-                                 if (current_time - p['timestamp']).to_sec() < self.tempo_expiracao_ponto]
-        
-        # Verifica se há algum ponto próximo
-        for ponto_data in self.pontos_publicados:
-            ponto_existente = ponto_data['ponto']
-            distancia = np.sqrt((novo_ponto.x - ponto_existente.x)**2 + 
-                               (novo_ponto.y - ponto_existente.y)**2)
-            if distancia < self.distancia_minima:
-                return True
-        return False
 
     def publicar_pointcloud_vazio(self):
         """Publica um PointCloud vazio para manter o buffer atualizado"""
@@ -171,55 +138,36 @@ class DetectorDeFaixasLaranja:
             return None
             
         try:
-            # Aguarda transformação entre frames
-            self.tf_listener.waitForTransform("map", frame_id, 
-                                            rospy.Time(0), rospy.Duration(3.0))
-            
-            # Obtém a transformação da câmera para o mapa
-            (trans, rot) = self.tf_listener.lookupTransform("map", frame_id, rospy.Time(0))
-            
-            # Posição da câmera no mapa
-            camera_pos = np.array(trans)
-            
-            # Projeta pixel para direção 3D normalizada
+            # Projeta pixel para direção 3D normalizada no frame da câmera
             ray_camera = self.camera_model.projectPixelTo3dRay((cx, cy))
-            ray_camera = np.array(ray_camera)
             
-            # Converte quaternion para matriz de rotação
-            from tf.transformations import quaternion_matrix
-            rot_matrix = quaternion_matrix(rot)[:3, :3]
+            # Cria um ponto distante na direção do raio (usando depth se disponível)
+            depth = 5.0  # Profundidade arbitrária para criar o ponto 3D
+            if self.depth_image is not None:
+                if 0 <= cy < self.depth_image.shape[0] and 0 <= cx < self.depth_image.shape[1]:
+                    depth_val = self.depth_image[cy, cx]
+                    if depth_val > 0 and not np.isnan(depth_val):
+                        depth = depth_val
             
-            # Transforma direção do raio para o frame do mapa
-            ray_map = rot_matrix.dot(ray_camera)
+            # Cria PointStamped no frame da câmera
+            ponto_camera = PointStamped()
+            ponto_camera.header.frame_id = frame_id
+            ponto_camera.header.stamp = rospy.Time(0)
+            ponto_camera.point.x = ray_camera[0] * depth
+            ponto_camera.point.y = ray_camera[1] * depth
+            ponto_camera.point.z = ray_camera[2] * depth
             
-            # Calcula interseção com o plano z=0 (chão)
-            # Equação da linha: P = camera_pos + t * ray_map
-            # Para z=0: camera_pos[2] + t * ray_map[2] = 0
-            # Portanto: t = -camera_pos[2] / ray_map[2]
+            # Transforma para o frame do mapa usando tf
+            ponto_mapa = self.tf_listener.transformPoint("map", ponto_camera)
             
-            if abs(ray_map[2]) < 1e-6:  # Raio paralelo ao chão
-                rospy.logwarn("Raio paralelo ao chão, não pode calcular interseção")
-                return None
-                
-            t = -camera_pos[2] / ray_map[2]
-            
-            if t <= 0:  # Interseção atrás da câmera
-                rospy.logwarn("Interseção do raio com o chão está atrás da câmera")
-                return None
-            
-            # Calcula ponto de interseção no chão
-            ponto_chao = camera_pos + t * ray_map
-            
-            # Cria PointStamped para retornar
-            ponto_mapa = PointStamped()
-            ponto_mapa.header.frame_id = "map"
-            ponto_mapa.header.stamp = rospy.Time.now()
-            ponto_mapa.point.x = ponto_chao[0]
-            ponto_mapa.point.y = ponto_chao[1]
-            ponto_mapa.point.z = 0.0  # No chão
+            # Projeta para o chão (z=0) mantendo x e y
+            ponto_mapa.point.z = 0.0
             
             return ponto_mapa
             
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException) as e:
+            rospy.logwarn("Erro de transformação TF: {}".format(e))
+            return None
         except Exception as e:
             rospy.logwarn("Erro ao transformar pixel para chão: {}".format(e))
             return None
@@ -232,13 +180,6 @@ class DetectorDeFaixasLaranja:
             rospy.logerr("Erro ao converter imagem: {}".format(e))
             return
 
-        # Otimização: processa apenas a cada N frames
-        self.contador_frames += 1
-        if self.contador_frames % self.processar_a_cada_n_frames != 0:
-            # Ainda publica PointCloud vazio para manter buffer atualizado
-            self.publicar_pointcloud_vazio()
-            return
-
         if self.depth_image is None:
             rospy.logwarn("Imagem de profundidade ainda não disponível.")
             return
@@ -248,24 +189,13 @@ class DetectorDeFaixasLaranja:
         current_time = rospy.Time.now()
         
         # Verifica se a imagem não é muito antiga (evita processar dados obsoletos)
-        if (current_time - image_timestamp).to_sec() > 0.2:  # Imagem mais antiga que 200ms
-            rospy.logwarn("Imagem muito antiga, pulando processamento")
+        if (current_time - image_timestamp) > rospy.Duration(0.2):
             self.publicar_pointcloud_vazio()
             return
         
-        # Verifica se deve publicar novos dados (evita spam)
-        if (current_time - self.ultima_deteccao_timestamp).to_sec() < self.min_intervalo_publicacao:
-            self.publicar_pointcloud_vazio()
-            return
-
         output_image = frame.copy()
-        
-        # Otimização: reduz resolução para processamento mais rápido
-        height, width = frame.shape[:2]
-        scale_factor = 0.7  # Reduz para 70% do tamanho original
-        small_frame = cv2.resize(frame, (int(width * scale_factor), int(height * scale_factor)))
-        
-        hsv = cv2.cvtColor(small_frame, cv2.COLOR_BGR2HSV)
+
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
         # Máscaras de cor
         mask_normal = cv2.inRange(hsv, self.lower_orange_normal, self.upper_orange_normal)
@@ -282,11 +212,10 @@ class DetectorDeFaixasLaranja:
         contours = contour_result[1] if len(contour_result) == 3 else contour_result[0]
 
         coords_centers = []
-        coords_world = []  # Para armazenar coordenadas transformadas para o mundo
-        
+        coords_world = []  
+
         # Determina o frame da câmera
-        # camera_frame = self.camera_model.tfFrame() if self.camera_info_received else msg.header.frame_id
-        camera_frame = 'camera_color_optical_frame'  # Usando frame fixo para simplificar
+        camera_frame = self.camera_model.tfFrame() if self.camera_info_received else msg.header.frame_id
 
         for contour in contours:
             area = cv2.contourArea(contour)
@@ -294,14 +223,14 @@ class DetectorDeFaixasLaranja:
                 rect = cv2.minAreaRect(contour)
                 box = cv2.boxPoints(rect)
                 # Ajusta coordenadas para o frame original
-                box = box / scale_factor
+                box = box
                 box = np.int32(box)
-                cv2.drawContours(output_image, [box], 0, (0, 255, 0), 2)
+                # cv2.drawContours(output_image, [box], 0, (0, 255, 0), 2)
 
                 (cx, cy), _, _ = rect
                 # Ajusta coordenadas para o frame original
-                cx = int(cx / scale_factor)
-                cy = int(cy / scale_factor)
+                # cx = int(cx)
+                # cy = int(cy)
 
                 # Obtém o valor de profundidade (z) no ponto (cx, cy)
                 if 0 <= cy < self.depth_image.shape[0] and 0 <= cx < self.depth_image.shape[1]:
@@ -314,9 +243,9 @@ class DetectorDeFaixasLaranja:
                         ponto_mundo = self.transformar_pixel_para_chao(cx, cy, camera_frame)
                         
                         if ponto_mundo is not None:
-                            coords_centers.append((cx, cy, z))  # Mantém z original para visualização
+                            coords_centers.append((cx, cy, 0))
                             coords_world.append(ponto_mundo)
-                            cv2.circle(output_image, (cx, cy), 5, (0, 255, 255), -1)
+                            # cv2.circle(output_image, (cx, cy), 5, (0, 255, 255), -1)
                             
                             # Publica ponto como obstáculo no mapa (na posição real do chão)
                             self.publicar_ponto_como_obstaculo(ponto_mundo.point, image_timestamp)
@@ -370,8 +299,10 @@ class DetectorDeFaixasLaranja:
 
         # Se nenhum retângulo, mostra aviso
         elif len(coords_centers) == 0:
-            if (current_time - self.last_print_time).to_sec() > 0.5:
-                rospy.logwarn("Nenhuma fita detectada.")
+            if (current_time - self.last_print_time).to_sec() > 0.3:
+                if not self.notificado:
+                    rospy.logwarn("Nenhuma fita detectada.")
+                    self.notificado = True
                 self.last_print_time = current_time
             
             # Publica PointCloud vazio para manter o buffer atualizado
