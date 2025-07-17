@@ -1,0 +1,9 @@
+<launch>  
+    <node name="green_table" pkg="work_vision" type="green_table.py" output="screen"/>
+    
+    <arg name="use_rviz" default="false"/>
+    <group if="$(arg use_rviz)">
+        <node name="rviz" pkg="rviz" type="rviz" args="-d $(find work_vision)/rviz/green_table.rviz"/>
+    </group>
+
+</launch>

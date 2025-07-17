@@ -24,4 +24,10 @@
         <node name="rviz" pkg="rviz" type="rviz"  args="-d $(find work_vision)/rviz/apriltag_ros.rviz"/>
     </group>
 
+    <arg name="use_greentable" default="false" />
+    <group if="$(arg use_greentable)">
+      <include file="$(find work_vision)/launch/green_table_detec.launch" />
+    </group>
+
+
 </launch>
