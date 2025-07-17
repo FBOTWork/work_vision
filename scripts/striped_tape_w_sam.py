@@ -8,9 +8,9 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import Float32MultiArray
 from cv_bridge import CvBridge
 
-class DetectorDeFaixasLaranja:
+class DetectorDeFaixasLaranjaEAmarela:
     def __init__(self):
-        rospy.init_node('detector_de_faixas_laranja', anonymous=True)
+        rospy.init_node('detector_de_faixas_laranja_amarela', anonymous=True)
 
         self.last_print_time = rospy.Time.now()
 
@@ -30,6 +30,10 @@ class DetectorDeFaixasLaranja:
         self.depth_image = None
         rospy.Subscriber('/camera/depth/image_rect_raw', Image, self.depth_callback)
 
+        # Range HSV para amarelo
+        self.lower_yellow = np.array([20, 100, 100])
+        self.upper_yellow = np.array([35, 255, 255])
+
         # Ranges HSV para detectar tons de laranja
         self.lower_orange_normal = np.array([0, 100, 100])
         self.upper_orange_normal = np.array([10, 255, 255])
@@ -39,19 +43,17 @@ class DetectorDeFaixasLaranja:
         self.min_area = 20
         self.max_area = 60000
 
-        rospy.loginfo("Detector de faixas laranja iniciado.")
+        rospy.loginfo("Detector de faixas laranja e amarela iniciado.")
         rospy.spin()
 
     def depth_callback(self, msg):
         try:
-            # Converte imagem de profundidade ROS para OpenCV (tipo float32 em metros)
             self.depth_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
         except Exception as e:
             rospy.logerr("Erro ao converter imagem de profundidade: {}".format(e))
 
     def image_callback(self, msg):
         try:
-            # Converte a imagem ROS para OpenCV
             frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         except Exception as e:
             rospy.logerr("Erro ao converter imagem: {}".format(e))
@@ -64,19 +66,24 @@ class DetectorDeFaixasLaranja:
         output_image = frame.copy()
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        # Máscaras de cor
-        mask_normal = cv2.inRange(hsv, self.lower_orange_normal, self.upper_orange_normal)
-        mask_highlight = cv2.inRange(hsv, self.lower_orange_highlight, self.upper_orange_highlight)
-        mask = cv2.bitwise_or(mask_normal, mask_highlight)
+        # Máscaras de cor para laranja
+        mask_orange_normal = cv2.inRange(hsv, self.lower_orange_normal, self.upper_orange_normal)
+        mask_orange_highlight = cv2.inRange(hsv, self.lower_orange_highlight, self.upper_orange_highlight)
+        mask_orange = cv2.bitwise_or(mask_orange_normal, mask_orange_highlight)
+
+        # Máscara de cor para amarelo
+        mask_yellow = cv2.inRange(hsv, self.lower_yellow, self.upper_yellow)
+
+        # Combina máscaras de laranja e amarelo
+        mask = cv2.bitwise_or(mask_orange, mask_yellow)
 
         # Operações morfológicas
-        kernel = np.ones((5,5), np.uint8)
+        kernel = np.ones((5, 5), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
 
         # Contornos
-        contour_result = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contours = contour_result[1] if len(contour_result) == 3 else contour_result[0]
+        _, contours, _ = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         coords_centers = []
 
@@ -84,29 +91,35 @@ class DetectorDeFaixasLaranja:
             area = cv2.contourArea(contour)
             if self.min_area < area < self.max_area:
                 rect = cv2.minAreaRect(contour)
+                (cx, cy), (w, h), angle = rect
+
+                # FILTRO para ignorar objetos muito estreitos ou pequenos
+                min_dim = min(w, h)
+                max_dim = max(w, h)
+
+                if min_dim < 5:  # muito estreito (em pixels), ignora
+                    continue
+                if max_dim / min_dim > 15:  # razão de aspecto muito alta, ignora
+                    continue
+
                 box = cv2.boxPoints(rect)
                 box = np.int32(box)
                 cv2.drawContours(output_image, [box], 0, (0, 255, 0), 2)
 
-                (cx, cy), _, _ = rect
-                cx = int(cx)
-                cy = int(cy)
+                cx, cy = int(cx), int(cy)
 
-                # Obtém o valor de profundidade (z) no ponto (cx, cy)
                 if 0 <= cy < self.depth_image.shape[0] and 0 <= cx < self.depth_image.shape[1]:
                     z = float(self.depth_image[cy, cx])
                 else:
-                    z = 0.0  # Profundidade inválida, define como 0
+                    z = 0.0
 
                 coords_centers.append((cx, cy, z))
                 cv2.circle(output_image, (cx, cy), 5, (0, 255, 255), -1)
 
-        # Publica as coordenadas (x, y, z) no tópico ROS
-        flat_coords = []
 
+        flat_coords = []
         current_time = rospy.Time.now()
 
-        # Se dois ou mais retângulos, encontra os dois extremos (mais distantes)
         if len(coords_centers) >= 2:
             max_dist = 0
             pt1 = pt2 = None
@@ -119,54 +132,29 @@ class DetectorDeFaixasLaranja:
                         max_dist = dist
                         pt1 = coords_centers[i]
                         pt2 = coords_centers[j]
-
             if pt1 and pt2:
                 flat_coords.extend([float(pt1[0]), float(pt1[1]), float(pt1[2]),
                                     float(pt2[0]), float(pt2[1]), float(pt2[2])])
-                cv2.line(output_image, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])), (255, 0, 0), 3, lineType=cv2.LINE_AA)
-
+                cv2.line(output_image, (int(pt1[0]), int(pt1[1])), (int(pt2[0]), int(pt2[1])), (255, 0, 0), 3)
                 if (current_time - self.last_print_time).to_sec() > 0.5:
                     rospy.loginfo("Extremos (x, y, z): [{:.2f}, {:.2f}, {:.3f}] <-> [{:.2f}, {:.2f}, {:.3f}]".format(
                         pt1[0], pt1[1], pt1[2], pt2[0], pt2[1], pt2[2]))
                     self.last_print_time = current_time
-
-        # Se exatamente um retângulo, publica ele mesmo
         elif len(coords_centers) == 1:
             x, y, z = coords_centers[0]
             flat_coords.extend([x, y, z])
-
             if (current_time - self.last_print_time).to_sec() > 0.5:
                 rospy.loginfo("Coordenada (x, y, z): [{:.2f}, {:.2f}, {:.3f}]".format(x, y, z))
                 self.last_print_time = current_time
-
-        # Se nenhum retângulo, mostra aviso
         else:
             if (current_time - self.last_print_time).to_sec() > 0.5:
                 rospy.logwarn("Nenhuma fita detectada.")
                 self.last_print_time = current_time
 
-
-
         coord_msg = Float32MultiArray()
         coord_msg.data = flat_coords
         self.pub_coords.publish(coord_msg)
 
-        if coords_centers and (rospy.Time.now() - self.last_print_time).to_sec() > 0.5:
-            coord_str = " ".join(["[{:.2f}, {:.2f}, {:.3f}]".format(x, y, z) for (x, y, z) in coords_centers])
-            rospy.loginfo("Coordenadas (x, y, z): " + coord_str)
-            self.last_print_time = rospy.Time.now()
-
-
-        # Desenha linhas entre os centros detectados
-        if len(coords_centers) > 1:
-            coords_centers.sort(key=lambda p: (p[0], p[1]))
-            pt1 = (int(coords_centers[0][0]), int(coords_centers[0][1]))
-            for pt in coords_centers[1:]:
-                pt2 = (int(pt[0]), int(pt[1]))
-                cv2.line(output_image, pt1, pt2, (255, 0, 0), 3, lineType=cv2.LINE_AA)
-                pt1 = pt2
-
-        # Publica a imagem processada
         try:
             msg_out = self.bridge.cv2_to_imgmsg(output_image, encoding="bgr8")
             self.pub_image.publish(msg_out)
@@ -175,6 +163,6 @@ class DetectorDeFaixasLaranja:
 
 if __name__ == '__main__':
     try:
-        DetectorDeFaixasLaranja()
+        DetectorDeFaixasLaranjaEAmarela()
     except rospy.ROSInterruptException:
         pass
