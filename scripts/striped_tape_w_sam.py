@@ -30,7 +30,7 @@ class DetectorDeFaixasLaranja:
         self.pub_image = rospy.Publisher('/fita_zebrada/detected_image', Image, queue_size=3)
 
         # Publisher das coordenadas dos centros detectados (x, y, z)
-        # self.pub_coords = rospy.Publisher('/fita_zebrada/centros', Float32MultiArray, queue_size=10)
+        self.pub_coords = rospy.Publisher('/fita_zebrada/centros', Float32MultiArray, queue_size=10)
         
         # Publisher para obstáculos virtuais no mapa (PointCloud acumulativo)
         self.pc_pub = rospy.Publisher('/virtual_obstacles', PointCloud2, queue_size=1)
