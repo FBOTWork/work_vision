@@ -27,6 +27,7 @@
     <arg name="use_greentable" default="false" />
     <group if="$(arg use_greentable)">
       <include file="$(find work_vision)/launch/green_table_detec.launch" />
+        <arg name="align_depth" value="true"/>
     </group>
 
 
