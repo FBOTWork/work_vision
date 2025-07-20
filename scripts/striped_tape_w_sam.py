@@ -31,8 +31,8 @@ class DetectorDeFaixasLaranjaEAmarela:
         rospy.Subscriber('/camera/depth/image_rect_raw', Image, self.depth_callback)
 
         # Range HSV para amarelo
-        self.lower_yellow = np.array([18, 120, 120])
-        self.upper_yellow = np.array([30, 255, 255])
+        self.lower_yellow = np.array([18, 80, 80])
+        self.upper_yellow = np.array([32, 255, 255])
 
 
         # Ranges HSV para detectar tons de laranja
