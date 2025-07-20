@@ -45,6 +45,11 @@ class DetectorDeFaixasLaranja:
         self.depth_image = None
         rospy.Subscriber('/camera/depth/image_rect_raw', Image, self.depth_callback)
 
+
+        # Ranges HSV para detectar tons de amarelo
+        self.lower_yellow = np.array([18, 80, 80])
+        self.upper_yellow = np.array([32, 255, 255])
+
         # Ranges HSV para detectar tons de laranja
         self.lower_orange_normal = np.array([0, 100, 100])
         self.upper_orange_normal = np.array([10, 255, 255])
@@ -58,9 +63,25 @@ class DetectorDeFaixasLaranja:
         self.tf_listener = tf.TransformListener()
 
         self.notificado = False
+        # Inicializa lista de pontos publicados
+        self.pontos_publicados = []
 
-        rospy.loginfo("Detector de faixas laranja iniciado.")
+        rospy.loginfo("Detector de faixas laranja e amarelo Finiciado.")
         rospy.spin()
+    def ponto_ja_existe_proximo(self, ponto, current_time, distancia=0.1, tempo=1.0):
+        """
+        Verifica se já existe um ponto próximo publicado recentemente.
+        distancia: distância máxima (em metros) para considerar pontos próximos
+        tempo: tempo máximo (em segundos) para considerar pontos recentes
+        """
+        for item in self.pontos_publicados:
+            p = item['ponto']
+            t = item['timestamp']
+            if (current_time - t).to_sec() < tempo:
+                dist = np.hypot(p.x - ponto.x, p.y - ponto.y)
+                if dist < distancia:
+                    return True
+        return False
 
     def camera_info_callback(self, msg):
         """Callback para receber informações da câmera (parâmetros intrínsecos)"""
@@ -128,7 +149,9 @@ class DetectorDeFaixasLaranja:
         marker.color.g = 0.5
         marker.color.b = 0.0
         marker.color.a = 1.0
-        self.marker_pub.publish(marker)
+        marker_array = MarkerArray()
+        marker_array.markers.append(marker)
+        self.marker_pub.publish(marker_array)
         rospy.sleep(0.1)  # Aguarda um pouco para garantir que o marcador seja publicado
 
     def transformar_pixel_para_chao(self, cx, cy, frame_id):
@@ -197,10 +220,17 @@ class DetectorDeFaixasLaranja:
 
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        # Máscaras de cor
-        mask_normal = cv2.inRange(hsv, self.lower_orange_normal, self.upper_orange_normal)
-        mask_highlight = cv2.inRange(hsv, self.lower_orange_highlight, self.upper_orange_highlight)
-        mask = cv2.bitwise_or(mask_normal, mask_highlight)
+
+        # Máscaras de cor para laranja
+        mask_orange_normal = cv2.inRange(hsv, self.lower_orange_normal, self.upper_orange_normal)
+        mask_orange_highlight = cv2.inRange(hsv, self.lower_orange_highlight, self.upper_orange_highlight)
+        mask_orange = cv2.bitwise_or(mask_orange_normal, mask_orange_highlight)
+
+        # Máscara de cor para amarelo
+        mask_yellow = cv2.inRange(hsv, self.lower_yellow, self.upper_yellow)
+
+        # Combina máscaras de laranja e amarelo
+        mask = cv2.bitwise_or(mask_orange, mask_yellow)
 
         # Operações morfológicas
         kernel = np.ones((5,5), np.uint8)
