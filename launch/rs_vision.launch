@@ -1,5 +1,9 @@
 <?xml version="1.0"?>
 <launch>
+    <arg name="use_apriltag" default="true" />
+    <arg name="use_container" default="false" />
+    <arg name="use_tape" default="false" />
+
     <include file="$(find realsense2_camera)/launch/rs_camera.launch" />
 
     <include file="$(find apriltag_ros)/launch/rs_continuous_detection.launch" />
