@@ -13,7 +13,7 @@
       <include file="$(find work_vision)/launch/strip_tape.launch" />
     </group>
 
-    <arg name="use_apriltag" default="false" />
+    <arg name="use_apriltag" default="true" />
     <group if="$(arg use_apriltag)">
         <include file="$(find apriltag_ros)/launch/rs_continuous_detection.launch" />
     </group>
