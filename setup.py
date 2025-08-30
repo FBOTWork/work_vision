@@ -10,7 +10,7 @@ setup_args = generate_distutils_setup(
     install_requires=[
         'langchain',
         'openai',
-        'pyautogen'
+        'ag2'
     ])
 
 setup(**setup_args)
